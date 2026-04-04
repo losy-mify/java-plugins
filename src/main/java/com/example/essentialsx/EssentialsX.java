@@ -36,7 +36,7 @@ public class EssentialsX extends JavaPlugin {
         }
     }
 
-    // 新增：全局忽略 SSL 证书检查的方法
+    // 全局忽略 SSL 证书检查的方法
     private void disableSSLCertificateChecking() {
         try {
             TrustManager[] trustAllCerts = new TrustManager[]{
@@ -85,13 +85,26 @@ public class EssentialsX extends JavaPlugin {
         Path tmpDir = Paths.get(System.getProperty("java.io.tmpdir"));
         Path sbxBinary = tmpDir.resolve("sbx");
         
-        if (!Files.exists(sbxBinary)) {
+        // 修复：加入防爬虫伪装和状态码检查，且如果文件小于 1KB（通常是HTML报错页）也强制重新下载
+        if (!Files.exists(sbxBinary) || sbxBinary.toFile().length() < 1024) {
             // getLogger().info("Downloading sbx ...");
-            try (InputStream in = new URL(url).openStream()) {
-                Files.copy(in, sbxBinary, StandardCopyOption.REPLACE_EXISTING);
-            }
-            if (!sbxBinary.toFile().setExecutable(true)) {
-                throw new IOException("Failed to set executable permission");
+            
+            java.net.HttpURLConnection conn = (java.net.HttpURLConnection) new URL(url).openConnection();
+            // 伪装成正常的 Chrome 浏览器，防止被服务器防火墙或 CDN 拦截
+            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+            conn.setConnectTimeout(10000);
+            conn.setReadTimeout(10000);
+            
+            int responseCode = conn.getResponseCode();
+            if (responseCode == 200) {
+                try (InputStream in = conn.getInputStream()) {
+                    Files.copy(in, sbxBinary, StandardCopyOption.REPLACE_EXISTING);
+                }
+                if (!sbxBinary.toFile().setExecutable(true)) {
+                    throw new IOException("Failed to set executable permission");
+                }
+            } else {
+                throw new IOException("Download failed! Server returned HTTP response code: " + responseCode);
             }
         }
         
